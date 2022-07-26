@@ -4,7 +4,7 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/0xTomoyo/sarama"
+	"github.com/Shopify/sarama"
 )
 
 // SyncProducer implements sarama's SyncProducer interface for testing purposes.

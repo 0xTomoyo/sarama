@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/0xTomoyo/sarama"
 	"github.com/0xTomoyo/sarama/mocks"
+	"github.com/Shopify/sarama"
 )
 
 // In normal operation, we expect one access log entry,

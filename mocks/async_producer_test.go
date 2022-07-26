@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/0xTomoyo/sarama"
+	"github.com/Shopify/sarama"
 )
 
 func generateRegexpChecker(re string) func([]byte) error {

@@ -11,8 +11,8 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/0xTomoyo/sarama"
 	"github.com/0xTomoyo/sarama/tools/tls"
+	"github.com/Shopify/sarama"
 )
 
 var (
