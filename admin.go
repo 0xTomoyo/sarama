@@ -141,6 +141,11 @@ type ClusterAdmin interface {
 	// locally cached value if it's available.
 	Controller() (*Broker, error)
 
+	// Remove members from the consumer group by given member identities.
+	// This operation is supported by brokers with version 2.3 or higher
+	// This is for static membership feature. KIP-345
+	RemoveMemberFromConsumerGroup(groupId string, groupInstanceIds []string) (*LeaveGroupResponse, error)
+
 	// Close shuts down the admin and closes underlying client.
 	Close() error
 }
@@ -275,17 +280,7 @@ func (ca *clusterAdmin) DescribeTopics(topics []string) (metadata []*TopicMetada
 		return nil, err
 	}
 
-	request := &MetadataRequest{
-		Topics:                 topics,
-		AllowAutoTopicCreation: false,
-	}
-
-	if ca.conf.Version.IsAtLeast(V1_0_0_0) {
-		request.Version = 5
-	} else if ca.conf.Version.IsAtLeast(V0_11_0_0) {
-		request.Version = 4
-	}
-
+	request := NewMetadataRequest(ca.conf.Version, topics)
 	response, err := controller.GetMetadata(request)
 	if err != nil {
 		return nil, err
@@ -299,14 +294,7 @@ func (ca *clusterAdmin) DescribeCluster() (brokers []*Broker, controllerID int32
 		return nil, int32(0), err
 	}
 
-	request := &MetadataRequest{
-		Topics: []string{},
-	}
-
-	if ca.conf.Version.IsAtLeast(V0_10_0_0) {
-		request.Version = 1
-	}
-
+	request := NewMetadataRequest(ca.conf.Version, nil)
 	response, err := controller.GetMetadata(request)
 	if err != nil {
 		return nil, int32(0), err
@@ -347,7 +335,7 @@ func (ca *clusterAdmin) ListTopics() (map[string]TopicDetail, error) {
 	}
 	_ = b.Open(ca.client.Config())
 
-	metadataReq := &MetadataRequest{}
+	metadataReq := NewMetadataRequest(ca.conf.Version, nil)
 	metadataResp, err := b.GetMetadata(metadataReq)
 	if err != nil {
 		return nil, err
@@ -900,9 +888,13 @@ func (ca *clusterAdmin) DescribeConsumerGroups(groups []string) (result []*Group
 	}
 
 	for broker, brokerGroups := range groupsPerBroker {
-		response, err := broker.DescribeGroups(&DescribeGroupsRequest{
+		describeReq := &DescribeGroupsRequest{
 			Groups: brokerGroups,
-		})
+		}
+		if ca.conf.Version.IsAtLeast(V2_3_0_0) {
+			describeReq.Version = 4
+		}
+		response, err := broker.DescribeGroups(describeReq)
 		if err != nil {
 			return nil, err
 		}
@@ -1041,12 +1033,12 @@ func (ca *clusterAdmin) DescribeLogDirs(brokerIds []int32) (allLogDirs map[int32
 	wg := sync.WaitGroup{}
 
 	for _, b := range brokerIds {
-		wg.Add(1)
 		broker, err := ca.findBroker(b)
 		if err != nil {
 			Logger.Printf("Unable to find broker with ID = %v\n", b)
 			continue
 		}
+		wg.Add(1)
 		go func(b *Broker, conf *Config) {
 			defer wg.Done()
 			_ = b.Open(conf) // Ensure that broker is opened
@@ -1195,4 +1187,22 @@ func (ca *clusterAdmin) AlterClientQuotas(entity []QuotaEntityComponent, op Clie
 	}
 
 	return nil
+}
+
+func (ca *clusterAdmin) RemoveMemberFromConsumerGroup(groupId string, groupInstanceIds []string) (*LeaveGroupResponse, error) {
+	controller, err := ca.client.Coordinator(groupId)
+	if err != nil {
+		return nil, err
+	}
+	request := &LeaveGroupRequest{
+		Version: 3,
+		GroupId: groupId,
+	}
+	for _, instanceId := range groupInstanceIds {
+		groupInstanceId := instanceId
+		request.Members = append(request.Members, MemberIdentity{
+			GroupInstanceId: &groupInstanceId,
+		})
+	}
+	return controller.LeaveGroup(request)
 }
